@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Anonymous review page: local use only, never index or host. -->
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data:; media-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'; frame-src 'none'">
+  <title>Textured Sphere Meshes for Level-of-Detail Rendering</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="review-banner">Anonymous review version. Local copy, please do not redistribute.</div>
+
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="#top" class="brand">Textured Sphere Meshes</a>
+    <div class="links">
+      <a href="#video">Video</a>
+      <a href="#method">Method</a>
+      <a href="#optimization">Geometry opt.</a>
+      <a href="#texopt">Texture opt.</a>
+      <a href="#explorer">Explorer</a>
+      <a href="#results">Results</a>
+      <a href="#performance">Performance</a>
+      <a href="#bibtex">BibTeX</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <h1>Textured Sphere Meshes for<br>Level-of-Detail Rendering</h1>
+  <p class="authors">Anonymous Authors</p>
+  <p class="venue">Paper under review</p>
+  <div class="buttons" id="hero-buttons"></div>
+</header>
+
+<main>
+
+<section class="teaser">
+  <figure>
+    <img id="fig-teaser" alt="Teaser: textured sphere meshes vs. RoLoPM on the Horse model">
+    <figcaption>
+      <b>Textured sphere meshes vs. RoLoPM at an equal number of renderable primitives.</b>
+      Top row: textured result. Middle row: the underlying primitives. Bottom row: FLIP error
+      against the ground truth. The <span class="sc">Horse</span> sphere mesh with 40, 30 and
+      20 spheres produces 250, 162 and 102 renderable primitives, which is the triangle budget
+      we give RoLoPM. Our sphere meshes keep structurally complex parts like the legs even
+      under extreme simplification.
+    </figcaption>
+  </figure>
+</section>
+
+<section id="abstract" class="narrow">
+  <h2>Abstract</h2>
+  <p>
+    Sphere meshes have been introduced as geometric proxies that maintain structural details
+    better than polygon meshes under drastic simplification. Despite this potential, they have
+    not yet been used as high-quality level-of-detail (LOD) models. One possible explanation is
+    the lack of techniques for generating high-quality, texture-mapped sphere meshes and
+    rendering them efficiently. In this work, we address this gap with a complete pipeline for
+    generating and rendering high-quality sphere meshes guided by visual error. First, we
+    introduce a geometry optimization module that jointly adapts topology and primitive
+    placement to improve geometric approximation. Second, we derive texture coordinates for
+    sphere meshes by ray casting against the original polygonal mesh, pack the resulting UV maps
+    into a compact texture atlas, and apply appearance-driven texture optimization to remove
+    artifacts. Third, we present efficient rendering approaches using either rasterization or
+    raytracing. We evaluate our method by comparing textured sphere meshes with conventional
+    polygonal level-of-detail meshes. Our results show that sphere meshes achieve better visual
+    quality under comparable primitive and rendering budgets, especially for structurally
+    complex meshes.
+  </p>
+  <div class="stat-row" id="key-stats"></div>
+</section>
+
+<section id="video">
+  <h2>Supplementary Video</h2>
+  <div class="video-wrap" id="main-video"></div>
+</section>
+
+<section id="sphere-meshes">
+  <h2>Sphere Meshes in a Nutshell</h2>
+  <div class="two-col">
+    <div>
+      <p>
+        A sphere mesh is a set of spheres connected by a medial mesh. Interpolating the spheres
+        along its edges and faces gives the final shape: every <b>vertex</b> is a sphere, every
+        <b>edge</b> a rounded truncated cone, and every <b>face</b> a rounded triangular prism.
+        Tubular structures such as legs, handles or wings need only a few primitives, where a
+        triangle mesh at the same budget loses them.
+      </p>
+      <p>
+        For rendering, we split every sphere mesh into three types of primitives:
+      </p>
+      <ul class="prim-list">
+        <li><span class="swatch sphere"></span><b>Spheres</b>: used as they are.</li>
+        <li><span class="swatch cone"></span><b>Lateral cone surfaces</b>: a cone is two spheres plus its lateral surface.</li>
+        <li><span class="swatch slab"></span><b>Triangles</b>: a prism is three spheres, three cone surfaces and two triangles.</li>
+      </ul>
+    </div>
+    <figure>
+      <img id="fig-building_blocks" alt="Decomposition of a sphere mesh into renderable primitives">
+      <figcaption>A sphere mesh of the <span class="sc">Mushrooms</span> model (50 spheres, 122 cones, 83 prisms) and its decomposition into renderable primitives.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="method">
+  <h2>Method</h2>
+
+  <div class="method-step">
+    <div class="step-head"><span class="card-num">1</span><h3>Appearance-driven geometry optimization</h3></div>
+    <figure class="wide">
+      <img id="fig-pipeline_geometry" alt="Geometry optimization overview">
+    </figure>
+    <p>
+      Starting from a Structural-MAT collapse history, a <b>loss-guided beam search</b> over split
+      and collapse operations explores alternative cuts and keeps the top-<i>k</i> candidates per
+      layer. This lets it move the sphere budget into structurally complex regions and avoid the
+      local minima of greedy edge collapses. With the selected topology fixed,
+      <b>gradient-based refinement</b> then adjusts sphere centers and radii. Both stages minimize
+      the same multi-view silhouette, depth and normal loss &#x2112;<sub>geom</sub> between the
+      rendered sphere mesh and the input mesh.
+    </p>
+  </div>
+
+  <div class="method-step">
+    <div class="step-head"><span class="card-num">2</span><h3>Texture atlas generation and optimization</h3></div>
+    <figure class="wide">
+      <img id="fig-pipeline_texture" alt="Texturing overview">
+    </figure>
+    <p>
+      Every primitive gets its own bijective parameterization: a cube map for spheres, an unrolled
+      envelope for cones and a rigid transform for triangles. Occluded regions are trimmed from
+      the patches before they are shelf-packed into a <b>texture atlas</b>. The atlas is
+      initialized by <b>raycasting</b> against the input mesh along the surface normal and then
+      refined by <b>differentiable texture optimization</b>. For fixed visibility this is a convex
+      weighted least-squares problem, where the weights down-weight grazing angles and geometric
+      mismatches.
+    </p>
+  </div>
+
+  <div class="method-step">
+    <div class="step-head"><span class="card-num">3</span><h3>Efficient rendering</h3></div>
+    <p>
+      <b>Billboard raycasting</b> runs in a standard rasterizer. Mesh shaders emit tight
+      screen-facing billboards for spheres and cones, and the analytic ray&ndash;primitive
+      intersection gives pixel-exact outlines, depth and normals. Conservative depth keeps early-Z
+      culling active, and a visibility buffer limits overdraw. Alternatively, a <b>raytracing</b>
+      pipeline uses custom intersection shaders or the hardware-accelerated <b>linear swept sphere
+      (LSS)</b> primitives.
+    </p>
+  </div>
+</section>
+
+<section id="optimization">
+  <h2>Geometry Optimization, Step by Step</h2>
+  <p class="lead">
+    Follow one optimization run. <b>Topology search</b> walks along the Structural-MAT collapse
+    history: in every layer the beam search scores split and collapse candidates by the
+    rendering loss and keeps the best ones. <b>Refinement</b> then fixes the topology and
+    optimizes sphere centers and radii by gradient descent. The red line is the outline of the
+    input mesh.
+  </p>
+
+  <div class="controls">
+    <div class="control" id="opt-run-ctrl">
+      <label>Run</label>
+      <div class="seg" id="opt-run-seg"></div>
+    </div>
+    <div class="control">
+      <label>Stage</label>
+      <div class="seg" id="opt-stage-seg">
+        <button data-s="beam" class="active">1 &middot; Topology search</button>
+        <button data-s="refine">2 &middot; Refinement</button>
+        <button data-s="turn">Result turntables</button>
+      </div>
+    </div>
+    <div class="control">
+      <label class="check"><input type="checkbox" id="opt-outline" checked> Input outline</label>
+    </div>
+  </div>
+
+  <div id="opt-steps">
+    <div class="opt-grid">
+      <div class="cmp-panel">
+        <div class="tt-label">Input mesh</div>
+        <div class="cmp-square"><img id="opt-ref" alt="Input mesh"></div>
+      </div>
+      <div class="cmp-panel ours">
+        <div class="tt-label" id="opt-sm-label">Sphere mesh</div>
+        <div class="cmp-square opt-stack">
+          <img id="opt-sm" alt="Sphere mesh">
+          <img id="opt-outline-img" class="overlay" alt="">
+        </div>
+      </div>
+      <div class="opt-side">
+        <div class="opt-big">
+          <div><div class="k" id="opt-k1-label">Spheres</div><div class="v accent" id="opt-k1">&ndash;</div></div>
+          <div><div class="k">Rendering loss</div><div class="v" id="opt-k2">&ndash;</div></div>
+        </div>
+        <div class="opt-chart-title" id="opt-chart-title">Loss along the accepted beam path</div>
+        <svg id="opt-chart" viewBox="0 0 400 200" preserveAspectRatio="none"></svg>
+        <div class="opt-legend" id="opt-legend"></div>
+      </div>
+    </div>
+
+    <div class="opt-timeline">
+      <button class="btn small" id="opt-play">Play</button>
+      <input type="range" id="opt-range" min="0" max="0" value="0">
+      <span class="opt-pos" id="opt-pos"></span>
+    </div>
+
+    <div id="opt-beam-extra">
+      <div class="opt-chart-title" id="opt-layer-title">Beam candidates</div>
+      <div class="opt-cands" id="opt-cands"></div>
+      <p class="hint" id="opt-cand-hint">The candidates kept in this layer of the beam search, sorted by rendering loss. The highlighted one lies on the accepted path.</p>
+    </div>
+  </div>
+
+  <div id="opt-turn" hidden>
+    <div class="turntables">
+      <div class="tt"><div class="tt-label" id="opt-tl-mat">Structural-MAT</div><video id="opt-tv-mat" muted loop playsinline preload="auto"></video></div>
+      <div class="tt"><div class="tt-label" id="opt-tl-top">+ Topology search</div><video id="opt-tv-top" muted loop playsinline preload="auto"></video></div>
+      <div class="tt ours"><div class="tt-label" id="opt-tl-final">+ Refinement (ours)</div><video id="opt-tv-final" muted loop playsinline preload="auto"></video></div>
+    </div>
+    <p class="hint">All three have the same sphere budget. Topology search moves spheres into structurally complex regions, and refinement fits the surface to the input.</p>
+  </div>
+</section>
+
+<section id="texopt">
+  <h2>Texture Optimization, Step by Step</h2>
+  <p class="lead">
+    Watch the texture atlas being optimized. Each iteration renders the textured sphere mesh,
+    compares it with the input mesh from many views, and updates the texels. Here the result is
+    shown for one of the training views. The atlas starts from our <b>raycasting
+    initialization</b>. Hover over the images to zoom in.
+  </p>
+
+  <div class="controls">
+    <div class="control" id="tex-run-ctrl">
+      <label>Run</label>
+      <div class="seg" id="tex-run-seg"></div>
+    </div>
+    <div class="control">
+      <label>Show</label>
+      <div class="seg" id="tex-show-seg">
+        <button data-v="img" class="active">Render</button>
+        <button data-v="flip">FLIP error</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="opt-grid">
+    <div class="cmp-panel">
+      <div class="tt-label">Input mesh</div>
+      <div class="cmp-square lens-host"><img id="tex-ref" alt="Input mesh"><div class="lens" hidden></div></div>
+    </div>
+    <div class="cmp-panel ours">
+      <div class="tt-label" id="tex-it-label">Sphere mesh</div>
+      <div class="cmp-square lens-host"><img id="tex-it" alt="Textured sphere mesh"><div class="lens" hidden></div></div>
+    </div>
+    <div class="opt-side">
+      <div class="opt-big three">
+        <div><div class="k">Iteration</div><div class="v accent" id="tex-k-it">&ndash;</div></div>
+        <div><div class="k">FLIP &darr;</div><div class="v" id="tex-k-flip">&ndash;</div></div>
+        <div><div class="k">PSNR &uarr;</div><div class="v" id="tex-k-psnr">&ndash;</div></div>
+      </div>
+      <div class="opt-chart-head">
+        <div class="opt-chart-title" id="tex-chart-title">FLIP error for this view</div>
+        <div class="seg small" id="tex-metric-seg">
+          <button data-m="flip" class="active">FLIP</button>
+          <button data-m="psnr">PSNR</button>
+        </div>
+      </div>
+      <svg id="tex-chart" viewBox="0 0 400 200" preserveAspectRatio="none"></svg>
+      <div class="opt-legend">
+        <span class="note">Error between the input render and the sphere mesh for the view shown. Error at the silhouette comes from the geometry and cannot be fixed by the texture. Click or drag in the chart to jump.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="opt-timeline">
+    <button class="btn small" id="tex-play">Play</button>
+    <input type="range" id="tex-range" min="1" max="1" value="1">
+    <span class="opt-pos" id="tex-pos"></span>
+  </div>
+
+  <div class="tex-atlas">
+    <div class="opt-chart-head">
+      <div class="opt-chart-title">Texture atlas at this iteration</div>
+      <div class="seg small" id="tex-atlas-seg"></div>
+    </div>
+    <div class="atlas-frame"><img id="tex-atlas" alt="Texture atlas"></div>
+    <p class="hint">Each patch belongs to one renderable primitive (a sphere, a lateral cone surface or a triangle). Empty areas are unused or were trimmed because they are never visible.</p>
+  </div>
+</section>
+
+<section id="explorer">
+  <h2>Interactive Results Explorer</h2>
+  <p class="lead">
+    Pick one of the 43 models and a sphere budget. Every baseline gets the <b>same number of
+    renderable primitives</b> as our sphere mesh.
+  </p>
+
+  <div class="model-picker" id="model-picker"></div>
+
+  <div class="controls">
+    <div class="control">
+      <label>Sphere budget</label>
+      <div class="seg" id="budget-seg"></div>
+    </div>
+    <div class="control">
+      <label for="baseline-select">Compare against</label>
+      <select id="baseline-select"></select>
+    </div>
+    <div class="control info" id="budget-info"></div>
+  </div>
+
+  <h3 class="sub">Turntables</h3>
+  <div class="turntables" id="turntables">
+    <div class="tt"><div class="tt-label">Ground truth</div><video id="tt-gt" muted loop playsinline preload="auto"></video></div>
+    <div class="tt ours"><div class="tt-label" id="tt-ours-label">Sphere mesh (ours)</div><video id="tt-ours" muted loop playsinline preload="auto"></video></div>
+    <div class="tt"><div class="tt-label" id="tt-base-label">Baseline</div><video id="tt-base" muted loop playsinline preload="auto"></video></div>
+  </div>
+  <div class="tt-controls">
+    <button id="tt-play" class="btn small">Pause</button>
+    <span class="hint">All three videos play in sync.</span>
+  </div>
+  <p class="hint" id="tt-missing" hidden>No turntables were built for this model (run the build without <code>--no-videos</code>).</p>
+
+  <h3 class="sub">Side-by-side comparison</h3>
+  <div class="seg small" id="view-seg">
+    <button data-v="tex" class="active">Textured</button>
+    <button data-v="flip">FLIP error</button>
+  </div>
+  <div class="compare-row">
+    <div class="cmp-panel">
+      <div class="tt-label">Ground truth</div>
+      <div class="cmp-square"><img id="cmp-gt" alt="Ground truth"></div>
+    </div>
+    <div class="cmp-panel ours">
+      <div class="tt-label" id="cmp-label">Ours vs. baseline</div>
+      <div class="slider" id="cmp-slider">
+        <img class="slider-img base" id="cmp-right" alt="">
+        <div class="slider-clip"><img class="slider-img" id="cmp-left" alt=""></div>
+        <div class="slider-handle"><span></span></div>
+        <div class="slider-tag left" id="cmp-left-tag">Ours</div>
+        <div class="slider-tag right" id="cmp-right-tag">Baseline</div>
+      </div>
+    </div>
+  </div>
+  <p class="hint">Drag the handle to compare. Both views use the same camera and framing as the ground truth.
+    <span id="flip-legend" hidden>FLIP error: <span class="cbar"></span> 0 &rarr; 1, lower is better.</span></p>
+  <div class="ranking">
+    <div class="ranking-title">Mean FLIP for this view <span class="muted">(lower is better, click a method to compare)</span></div>
+    <div id="ranking"></div>
+  </div>
+
+  <div class="two-col top">
+    <div>
+      <h3 class="sub">Geometry optimization stages</h3>
+      <div class="seg small" id="stage-seg">
+        <button data-k="tessellated" class="active">Surface</button>
+        <button data-k="skeleton">Medial skeleton</button>
+      </div>
+      <div class="stages" id="stages">
+        <figure><img id="st-initial" alt=""><figcaption>Structural-MAT</figcaption></figure>
+        <figure><img id="st-topology" alt=""><figcaption>+ Topology search</figcaption></figure>
+        <figure><img id="st-final" alt=""><figcaption>+ Refinement</figcaption></figure>
+      </div>
+      <p class="hint" id="stages-missing" hidden>No geometry stage renders for this model.</p>
+    </div>
+    <div>
+      <h3 class="sub">Texture optimization</h3>
+      <div class="slider small" id="tex-slider">
+        <img class="slider-img base" id="tex-right" alt="">
+        <div class="slider-clip"><img class="slider-img" id="tex-left" alt=""></div>
+        <div class="slider-handle"><span></span></div>
+        <div class="slider-tag left">Raycast + optimized</div>
+        <div class="slider-tag right">Raycast only</div>
+      </div>
+      <p class="hint" id="tex-info"></p>
+    </div>
+  </div>
+</section>
+
+<section id="results">
+  <h2>Quantitative Results</h2>
+  <p class="lead">
+    We compare against nine polygonal LOD methods on 43 textured models from the Google Scanned
+    Objects dataset, at 20, 30, 40 and 50 spheres. The metrics are averaged over 128 views
+    sampled uniformly on a sphere. Baselines without native texturing get our differentiable
+    texturing module.
+  </p>
+
+  <div class="controls">
+    <div class="control">
+      <label>Metric</label>
+      <div class="seg" id="metric-seg"></div>
+    </div>
+  </div>
+  <div class="table-wrap"><table id="results-table" class="results"></table></div>
+  <p class="hint">Best value per column in <b>bold</b>. Each column is a sphere budget, and every method gets the matching primitive count.</p>
+
+  <div class="tabs" id="plot-tabs"></div>
+  <figure class="wide plot"><div id="plot-imgs"></div><figcaption id="plot-caption"></figcaption></figure>
+</section>
+
+<section id="performance">
+  <h2>Performance</h2>
+  <p class="lead">
+    100k instances on a uniform grid, rendered along a 1000-frame camera flight over the grid
+    (1920&times;1080, RTX&nbsp;5090). Projections range from medium size down to almost single
+    pixels.
+  </p>
+  <figure class="wide plot"><img id="fig-speed_vs_quality" alt="Speed vs. quality"></figure>
+  <h3 class="sub">Sphere meshes (billboard rendering) vs. RoLoPM</h3>
+  <div class="table-wrap"><table id="speed-table" class="results"></table></div>
+</section>
+
+<section id="bibtex" class="narrow">
+  <h2>BibTeX</h2>
+  <div class="bib">
+    <button class="btn small copy" id="copy-bib">Copy</button>
+<pre id="bib-text">@article{anonymous2026spheremeshes,
+  title   = {Textured Sphere Meshes for Level-of-Detail Rendering},
+  author  = {Anonymous},
+  journal = {Under review},
+  year    = {2026}
+}</pre>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  Anonymous submission. This page is meant for local viewing during review only.
+</footer>
+
+<script src="data.js"></script>
+<script src="main.js"></script>
+</body>
+</html>

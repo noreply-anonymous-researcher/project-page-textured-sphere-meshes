@@ -1,0 +1,61 @@
+name: Deploy project page to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fail the deploy if anything identity-like slipped into the site files.
+      - name: Anonymity check
+        run: |
+          set -u
+          fail=0
+          # e-mail addresses (ignore the GitHub noreply form)
+          if grep -rIEn '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' \
+               --include='*.html' --include='*.js' --include='*.css' --include='*.json' --include='*.txt' --include='*.md' \
+               --exclude-dir=.git --exclude-dir=.github . | grep -v 'users.noreply.github.com'; then
+            echo "::error::E-mail address found in site files"; fail=1
+          fi
+          # local filesystem paths
+          if grep -rIEn '[A-Za-z]:\\\\?(Users|Documents)|/Users/[A-Za-z]|/home/[A-Za-z]' \
+               --include='*.html' --include='*.js' --include='*.css' --include='*.json' --include='*.txt' \
+               --exclude-dir=.git --exclude-dir=.github .; then
+            echo "::error::Local path found in site files"; fail=1
+          fi
+          exit $fail
+
+      # Publish only what the page needs.
+      - name: Assemble site
+        run: |
+          mkdir _site
+          cp index.html main.js data.js style.css _site/
+          cp -r assets _site/assets
+          find _site -name '.done' -delete
+          rm -f _site/assets/video/source.txt
+          touch _site/.nojekyll
+          du -sh _site
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
